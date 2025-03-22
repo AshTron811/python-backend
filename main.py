@@ -4,7 +4,7 @@ import os
 import face_recognition
 import pandas as pd
 from datetime import datetime
-from flask import Flask, jsonify, send_file, request, Response
+from flask import Flask, jsonify, send_file, request, Response, send_from_directory
 import threading
 import time
 
@@ -18,7 +18,7 @@ if not os.path.exists(KNOWN_FACES_DIR):
 known_faces = []
 known_names = []
 for filename in os.listdir(KNOWN_FACES_DIR):
-    if filename.endswith(".jpg") or filename.endswith(".png"):
+    if filename.lower().endswith((".jpg", ".png")):
         image = face_recognition.load_image_file(os.path.join(KNOWN_FACES_DIR, filename))
         encodings = face_recognition.face_encodings(image)
         if encodings:
@@ -62,7 +62,7 @@ def capture_loop():
         success, img = cap.read()
         if not success:
             continue
-        latest_frame = img.copy()  # Update the live frame for streaming
+        latest_frame = img.copy()  # Update live frame for streaming
         face_locations = face_recognition.face_locations(img)
         if face_locations:
             for face_location in face_locations:
@@ -111,7 +111,6 @@ def video_feed():
 # Endpoint to capture a new face using an image uploaded from the frontend (base64-encoded)
 @app.route("/capture_face", methods=["POST"])
 def capture_face():
-    # Expect 'name' and 'imageData' fields
     if "name" not in request.form or "imageData" not in request.form:
         return jsonify({"error": "Name and imageData are required"}), 400
 
@@ -121,7 +120,7 @@ def capture_face():
     if not name:
         return jsonify({"error": "Name cannot be empty"}), 400
 
-    # Remove data URL prefix if present (e.g., "data:image/jpeg;base64,")
+    # Remove the data URL prefix if present (e.g., "data:image/jpeg;base64,")
     if image_data.startswith("data:image"):
         image_data = image_data.split(",")[1]
 
@@ -170,6 +169,18 @@ def stop_attendance():
         return jsonify({"message": "Attendance system stopped."}), 200
     else:
         return jsonify({"message": "Attendance system is not running."}), 200
+
+# Endpoint to list known face files as a JSON array
+@app.route("/known_faces", methods=["GET"])
+def list_known_faces():
+    files = [filename for filename in os.listdir(KNOWN_FACES_DIR) 
+             if filename.lower().endswith((".jpg", ".png"))]
+    return jsonify(files)
+
+# Endpoint to serve an individual known face image
+@app.route("/known_faces/<filename>", methods=["GET"])
+def serve_known_face(filename):
+    return send_from_directory(KNOWN_FACES_DIR, filename)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
