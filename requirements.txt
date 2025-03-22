@@ -1,0 +1,6 @@
+Flask==2.2.3
+werkzeug==2.2.3
+opencv-python==4.7.0.68
+face_recognition==1.3.0
+pandas==1.5.3
+numpy==1.24.2
