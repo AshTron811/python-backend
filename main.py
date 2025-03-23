@@ -120,7 +120,7 @@ def capture_face():
     if not name:
         return jsonify({"error": "Name cannot be empty"}), 400
 
-    # Remove the data URL prefix if present (e.g., "data:image/jpeg;base64,")
+    # Remove data URL prefix if present (e.g., "data:image/jpeg;base64,")
     if image_data.startswith("data:image"):
         image_data = image_data.split(",")[1]
 
