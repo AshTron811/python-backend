@@ -30,7 +30,6 @@ attendance_csv = "attendance.csv"
 if os.path.exists(attendance_csv):
     attendance_df = pd.read_csv(attendance_csv)
 else:
-    # Create an empty DataFrame if file doesn't exist
     attendance_df = pd.DataFrame(columns=["Name", "Time"])
 marked_names = set(attendance_df["Name"].tolist())
 
@@ -63,20 +62,32 @@ def capture_loop():
         success, img = cap.read()
         if not success:
             continue
-        latest_frame = img.copy()  # Update live frame for streaming
+
+        # Get face locations in the frame
         face_locations = face_recognition.face_locations(img)
-        if face_locations:
-            for face_location in face_locations:
-                top, right, bottom, left = face_location
-                rgb_frame = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                encodings = face_recognition.face_encodings(rgb_frame, [face_location])
-                if encodings:
-                    face_encoding = encodings[0]
-                    matches = face_recognition.compare_faces(known_faces, face_encoding, tolerance=0.65)
-                    if True in matches:
-                        match_index = matches.index(True)
-                        name = known_names[match_index]
-                        mark_attendance(name)
+        # For each face, check if it matches a known face and draw a rectangle if recognized
+        for face_location in face_locations:
+            top, right, bottom, left = face_location
+            # Convert BGR to RGB for face_recognition processing
+            rgb_frame = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            encodings = face_recognition.face_encodings(rgb_frame, [face_location])
+            if encodings:
+                face_encoding = encodings[0]
+                matches = face_recognition.compare_faces(known_faces, face_encoding, tolerance=0.65)
+                if True in matches:
+                    match_index = matches.index(True)
+                    name = known_names[match_index]
+                    # Mark attendance
+                    mark_attendance(name)
+                    # Draw a green rectangle around the face
+                    cv2.rectangle(img, (left, top), (right, bottom), (0, 255, 0), 2)
+                    # Put the name label above the rectangle
+                    cv2.putText(img, name, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                else:
+                    # Optionally, draw a red rectangle for unrecognized faces
+                    cv2.rectangle(img, (left, top), (right, bottom), (0, 0, 255), 2)
+        # Update latest_frame after drawing rectangles
+        latest_frame = img.copy()
         time.sleep(1)  # Adjust frame rate as needed
     cap.release()
     print("Capture loop stopped.")
@@ -103,7 +114,6 @@ def get_attendance():
     if os.path.exists(attendance_csv):
         return send_file(attendance_csv, mimetype="text/csv")
     else:
-        # Return an empty CSV if attendance.csv doesn't exist
         empty_csv = "Name,Time\n"
         return Response(empty_csv, mimetype="text/csv")
 
@@ -123,7 +133,6 @@ def capture_face():
     if not name:
         return jsonify({"error": "Name cannot be empty"}), 400
 
-    # Remove data URL prefix if present (e.g., "data:image/jpeg;base64,")
     if image_data.startswith("data:image"):
         image_data = image_data.split(",")[1]
 
