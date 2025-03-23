@@ -30,6 +30,7 @@ attendance_csv = "attendance.csv"
 if os.path.exists(attendance_csv):
     attendance_df = pd.read_csv(attendance_csv)
 else:
+    # Create an empty DataFrame if file doesn't exist
     attendance_df = pd.DataFrame(columns=["Name", "Time"])
 marked_names = set(attendance_df["Name"].tolist())
 
@@ -102,7 +103,9 @@ def get_attendance():
     if os.path.exists(attendance_csv):
         return send_file(attendance_csv, mimetype="text/csv")
     else:
-        return jsonify({"error": "Attendance file not found"}), 404
+        # Return an empty CSV if attendance.csv doesn't exist
+        empty_csv = "Name,Time\n"
+        return Response(empty_csv, mimetype="text/csv")
 
 @app.route("/video_feed")
 def video_feed():
@@ -173,7 +176,7 @@ def stop_attendance():
 # Endpoint to list known face files as a JSON array
 @app.route("/known_faces", methods=["GET"])
 def list_known_faces():
-    files = [filename for filename in os.listdir(KNOWN_FACES_DIR) 
+    files = [filename for filename in os.listdir(KNOWN_FACES_DIR)
              if filename.lower().endswith((".jpg", ".png"))]
     return jsonify(files)
 
