@@ -24,7 +24,6 @@ for filename in os.listdir(KNOWN_FACES_DIR):
         encodings = face_recognition.face_encodings(image)
         if encodings:
             known_faces.append(encodings[0])
-            # Remove extension from filename for the name
             known_names.append(os.path.splitext(filename)[0])
             print(f"Loaded known face: {filename}")
 
@@ -68,34 +67,33 @@ def capture_loop():
             print("Failed to read frame from camera.")
             continue
 
-        # Detect faces in the frame
+        # Detect faces in the current frame
         face_locations = face_recognition.face_locations(img)
         print("Detected face locations:", face_locations)
+        # Process each detected face
         for face_location in face_locations:
             top, right, bottom, left = face_location
-            # Convert the image from BGR to RGB
             rgb_frame = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             encodings = face_recognition.face_encodings(rgb_frame, [face_location])
-            if encodings:
-                face_encoding = encodings[0]
-                # Adjust tolerance if needed (here using 0.7 for slightly more lenient matching)
-                matches = face_recognition.compare_faces(known_faces, face_encoding, tolerance=0.7)
-                print("Matches:", matches)
-                if True in matches:
-                    match_index = matches.index(True)
-                    name = known_names[match_index]
-                    mark_attendance(name)
-                    # Draw green rectangle and label for recognized face
-                    cv2.rectangle(img, (left, top), (right, bottom), (0, 255, 0), 2)
-                    cv2.putText(img, name, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-                    print(f"Recognized face: {name}")
-                else:
-                    # Draw red rectangle for unrecognized face (optional)
-                    cv2.rectangle(img, (left, top), (right, bottom), (0, 0, 255), 2)
-                    print("Face not recognized.")
-        # Update latest frame for streaming
+            if not encodings:
+                continue
+            face_encoding = encodings[0]
+            # Adjust tolerance if necessary (0.7 might be too strict or lenient)
+            matches = face_recognition.compare_faces(known_faces, face_encoding, tolerance=0.7)
+            print("Matches:", matches)
+            if True in matches:
+                match_index = matches.index(True)
+                name = known_names[match_index]
+                mark_attendance(name)
+                cv2.rectangle(img, (left, top), (right, bottom), (0, 255, 0), 2)
+                cv2.putText(img, name, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                print(f"Recognized face: {name}")
+            else:
+                # Optionally draw a red rectangle for unrecognized faces
+                cv2.rectangle(img, (left, top), (right, bottom), (0, 0, 255), 2)
+                print("Face not recognized.")
         latest_frame = img.copy()
-        time.sleep(1)
+        time.sleep(0.5)  # Reduced sleep time for more frequent detection
     cap.release()
     print("Capture loop stopped.")
 
@@ -121,7 +119,6 @@ def get_attendance():
     if os.path.exists(attendance_csv):
         return send_file(attendance_csv, mimetype="text/csv")
     else:
-        # Return an empty CSV if not found
         empty_csv = "Name,Time\n"
         return Response(empty_csv, mimetype="text/csv")
 
@@ -129,7 +126,6 @@ def get_attendance():
 def video_feed():
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-# Endpoint to capture a new face from an uploaded base64 image
 @app.route("/capture_face", methods=["POST"])
 def capture_face():
     if "name" not in request.form or "imageData" not in request.form:
@@ -167,7 +163,6 @@ def capture_face():
     else:
         return jsonify({"error": "No face detected in the uploaded image."}), 400
 
-# Endpoint to start the attendance system (capture loop)
 @app.route("/start_attendance", methods=["POST"])
 def start_attendance():
     global attendance_running, capture_thread
@@ -179,25 +174,22 @@ def start_attendance():
     else:
         return jsonify({"message": "Attendance system already running."}), 200
 
-# Endpoint to stop the attendance system (capture loop)
 @app.route("/stop_attendance", methods=["POST"])
 def stop_attendance():
     global attendance_running
     if attendance_running:
         attendance_running = False
-        time.sleep(2)  # Allow the capture loop to exit gracefully
+        time.sleep(2)
         return jsonify({"message": "Attendance system stopped."}), 200
     else:
         return jsonify({"message": "Attendance system is not running."}), 200
 
-# Endpoint to list known face filenames as a JSON array
 @app.route("/known_faces", methods=["GET"])
 def list_known_faces():
     files = [filename for filename in os.listdir(KNOWN_FACES_DIR)
              if filename.lower().endswith((".jpg", ".png"))]
     return jsonify(files)
 
-# Endpoint to serve an individual known face image
 @app.route("/known_faces/<filename>", methods=["GET"])
 def serve_known_face(filename):
     return send_from_directory(KNOWN_FACES_DIR, filename)
