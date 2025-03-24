@@ -58,8 +58,8 @@ def mark_attendance(name):
 
 def process_attendance_from_image(image):
     """
-    Process the uploaded image (as a numpy array) to detect faces,
-    compare against known faces, and mark attendance for recognized faces.
+    Process the given image (numpy array) to detect faces,
+    compare with known faces, and mark attendance for recognized faces.
     Returns a list of recognized names.
     """
     face_locations = face_recognition.face_locations(image)
@@ -71,7 +71,7 @@ def process_attendance_from_image(image):
         if not encodings:
             continue
         face_encoding = encodings[0]
-        # Use a tolerance of 0.8 (adjust as needed)
+        # Adjust tolerance as needed (0.8 here)
         matches = face_recognition.compare_faces(known_faces, face_encoding, tolerance=0.8)
         print("Matches for uploaded image:", matches)
         if True in matches:
@@ -108,7 +108,7 @@ def list_known_faces():
 def serve_known_face(filename):
     return send_from_directory(KNOWN_FACES_DIR, filename)
 
-# Endpoint to upload a new face image (adds to known faces, does not mark attendance)
+# Endpoint to upload a new face image (adds to known faces list, does not mark attendance)
 @app.route("/capture_face", methods=["POST"])
 def capture_face():
     if "name" not in request.form or "imageData" not in request.form:
@@ -149,7 +149,7 @@ def capture_face():
     except Exception as e:
         return jsonify({"error": "Error processing image: " + str(e)}), 500
 
-# Endpoint to capture an image for attendance marking (triggered when "Start Attendance" is pressed)
+# Endpoint to mark attendance by capturing an image from the frontend
 @app.route("/start_attendance", methods=["POST"])
 def start_attendance():
     if "imageData" not in request.form:
@@ -164,7 +164,7 @@ def start_attendance():
     except Exception as e:
         return jsonify({"error": "Failed to decode image data: " + str(e)}), 400
 
-    # Convert the image bytes to a numpy array, then decode the image using OpenCV
+    # Convert the image bytes into a numpy array, then decode to an image
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     if img is None:
