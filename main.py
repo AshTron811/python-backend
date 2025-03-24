@@ -61,7 +61,7 @@ attendance_running = False
 capture_thread = None
 latest_frame = None
 
-# Capture loop: this uses the physical webcam (local testing only)
+# Capture loop uses the physical webcam (for local testing only)
 def capture_loop():
     global attendance_running, latest_frame
     cap = cv2.VideoCapture(0)
@@ -85,7 +85,7 @@ def capture_loop():
                 print("No encoding found for detected face.")
                 continue
             face_encoding = encodings[0]
-            # Using tolerance of 0.8 (adjust as needed)
+            # Using a tolerance of 0.8 (adjust as needed)
             matches = face_recognition.compare_faces(known_faces, face_encoding, tolerance=0.8)
             print("Matches for detected face:", matches)
             if True in matches:
@@ -104,7 +104,6 @@ def capture_loop():
     cap.release()
     print("Capture loop stopped.")
 
-# Generate MJPEG stream from latest_frame
 def generate_frames():
     global latest_frame
     while True:
@@ -133,7 +132,7 @@ def get_attendance():
 def video_feed():
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-# Endpoint to capture a new face via uploaded base64 image
+# Endpoint to upload a new face image without marking attendance
 @app.route("/capture_face", methods=["POST"])
 def capture_face():
     if "name" not in request.form or "imageData" not in request.form:
@@ -168,8 +167,8 @@ def capture_face():
             known_faces.append(encodings[0])
             known_names.append(name)
             print(f"Added {name} to known faces from uploaded image.")
-            mark_attendance(name)
-            return jsonify({"message": f"Added {name} to known faces and marked attendance."}), 200
+            # Attendance is NOT marked here.
+            return jsonify({"message": f"Added {name} to known faces."}), 200
         else:
             return jsonify({"error": "No face detected in the uploaded image."}), 400
     except Exception as e:
