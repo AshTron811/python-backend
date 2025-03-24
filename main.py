@@ -58,7 +58,7 @@ def mark_attendance(name):
 
 def process_attendance_from_image(image):
     """
-    Process the given image (numpy array) to detect faces,
+    Process the uploaded image (numpy array) to detect faces,
     compare against known faces, and mark attendance for recognized faces.
     Returns a list of recognized names.
     """
@@ -69,6 +69,7 @@ def process_attendance_from_image(image):
         rgb_frame = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         encodings = face_recognition.face_encodings(rgb_frame, [(top, right, bottom, left)])
         if not encodings:
+            print("No encoding found for a detected face.")
             continue
         face_encoding = encodings[0]
         matches = face_recognition.compare_faces(known_faces, face_encoding, tolerance=0.8)
@@ -151,6 +152,7 @@ def capture_face():
 # Endpoint to mark attendance by processing an image captured on the client
 @app.route("/start_attendance", methods=["POST"])
 def start_attendance():
+    print("Received request to /start_attendance with form keys:", list(request.form.keys()))
     if "imageData" not in request.form:
         return jsonify({"error": "Image data is required"}), 400
 
