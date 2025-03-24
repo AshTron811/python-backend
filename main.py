@@ -1,11 +1,11 @@
 import base64
 import cv2
 import os
+import numpy as np
 import face_recognition
 import pandas as pd
 from datetime import datetime
 from flask import Flask, jsonify, send_file, request, Response, send_from_directory
-import threading
 import time
 
 app = Flask(__name__)
@@ -56,62 +56,36 @@ def mark_attendance(name):
         except Exception as e:
             print(f"Error saving attendance: {e}")
 
-# --- Global Variables for live video (local testing only) ---
-attendance_running = False
-capture_thread = None
-latest_frame = None
-
-# (The capture_loop() function remains for local testing of live video feed)
-def capture_loop():
-    global attendance_running, latest_frame
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        print("Error: Could not open webcam.")
-        return
-    print("Capture loop started.")
-    while attendance_running:
-        success, frame = cap.read()
-        if not success:
-            print("Failed to read frame from camera.")
+def process_attendance_from_image(image):
+    """
+    Given an image (as a numpy array), detect faces, compare against known faces,
+    and mark attendance for recognized faces. Returns a list of recognized names.
+    """
+    face_locations = face_recognition.face_locations(image)
+    print("Detected face locations in uploaded image:", face_locations)
+    recognized_names = []
+    for (top, right, bottom, left) in face_locations:
+        rgb_frame = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        encodings = face_recognition.face_encodings(rgb_frame, [(top, right, bottom, left)])
+        if not encodings:
             continue
-
-        # Detect faces in the frame
-        face_locations = face_recognition.face_locations(frame)
-        print("Detected face locations:", face_locations)
-        for (top, right, bottom, left) in face_locations:
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            encodings = face_recognition.face_encodings(rgb_frame, [(top, right, bottom, left)])
-            if not encodings:
-                print("No encoding found for detected face.")
-                continue
-            face_encoding = encodings[0]
-            matches = face_recognition.compare_faces(known_faces, face_encoding, tolerance=0.8)
-            print("Matches for detected face:", matches)
-            if True in matches:
-                match_index = matches.index(True)
-                recognized_name = known_names[match_index]
-                mark_attendance(recognized_name)
-                cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
-                cv2.putText(frame, recognized_name, (left, top - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-                print(f"Recognized face: {recognized_name}")
-            else:
-                cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
-                print("Face not recognized.")
-        latest_frame = frame.copy()
-        time.sleep(0.5)
-    cap.release()
-    print("Capture loop stopped.")
-
-def generate_frames():
-    global latest_frame
-    while True:
-        if latest_frame is not None:
-            ret, buffer = cv2.imencode('.jpg', latest_frame)
-            if ret:
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-        time.sleep(0.1)
+        face_encoding = encodings[0]
+        # Use a tolerance of 0.8 (adjust as needed)
+        matches = face_recognition.compare_faces(known_faces, face_encoding, tolerance=0.8)
+        print("Matches for uploaded image:", matches)
+        if True in matches:
+            match_index = matches.index(True)
+            recognized_name = known_names[match_index]
+            mark_attendance(recognized_name)
+            recognized_names.append(recognized_name)
+            # Optionally, draw a rectangle on the image (not sent to client)
+            cv2.rectangle(image, (left, top), (right, bottom), (0, 255, 0), 2)
+            cv2.putText(image, recognized_name, (left, top - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+            print(f"Recognized face: {recognized_name}")
+        else:
+            print("Face not recognized in uploaded image.")
+    return recognized_names
 
 # --- Flask Endpoints ---
 
@@ -127,11 +101,17 @@ def get_attendance():
         empty_csv = "Name,Time\n"
         return Response(empty_csv, mimetype="text/csv")
 
-@app.route("/video_feed")
-def video_feed():
-    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+@app.route("/known_faces", methods=["GET"])
+def list_known_faces():
+    files = [filename for filename in os.listdir(KNOWN_FACES_DIR)
+             if filename.lower().endswith((".jpg", ".png"))]
+    return jsonify(files)
 
-# Endpoint to capture a new face via uploaded image (base64) without marking attendance
+@app.route("/known_faces/<filename>", methods=["GET"])
+def serve_known_face(filename):
+    return send_from_directory(KNOWN_FACES_DIR, filename)
+
+# Endpoint to upload a new face image without marking attendance
 @app.route("/capture_face", methods=["POST"])
 def capture_face():
     if "name" not in request.form or "imageData" not in request.form:
@@ -166,76 +146,41 @@ def capture_face():
             known_faces.append(encodings[0])
             known_names.append(name)
             print(f"Added {name} to known faces from uploaded image.")
-            # Do NOT mark attendance here.
+            # Do not mark attendance here.
             return jsonify({"message": f"Added {name} to known faces."}), 200
         else:
             return jsonify({"error": "No face detected in the uploaded image."}), 400
     except Exception as e:
         return jsonify({"error": "Error processing image: " + str(e)}), 500
 
-# Updated /start_attendance endpoint: capture a single image from the webcam and mark attendance
+# Endpoint to capture a photo when "Start Attendance" is pressed.
+# This endpoint expects an image (base64) uploaded from the frontend,
+# then processes that image to detect and recognize faces, marking attendance for recognized faces.
 @app.route("/start_attendance", methods=["POST"])
 def start_attendance():
-    # Capture a single image from the physical webcam
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        return jsonify({"error": "Could not open webcam."}), 500
-    success, frame = cap.read()
-    cap.release()
-    if not success:
-        return jsonify({"error": "Failed to capture image from webcam."}), 500
+    if "imageData" not in request.form:
+        return jsonify({"error": "Image data is required"}), 400
 
-    # Process the captured frame for face recognition
-    face_locations = face_recognition.face_locations(frame)
-    print("Captured image face locations:", face_locations)
-    recognized_names = []
-    for (top, right, bottom, left) in face_locations:
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        encodings = face_recognition.face_encodings(rgb_frame, [(top, right, bottom, left)])
-        if not encodings:
-            continue
-        face_encoding = encodings[0]
-        matches = face_recognition.compare_faces(known_faces, face_encoding, tolerance=0.8)
-        print("Matches for captured image:", matches)
-        if True in matches:
-            match_index = matches.index(True)
-            recognized_name = known_names[match_index]
-            mark_attendance(recognized_name)
-            recognized_names.append(recognized_name)
-            # Draw bounding box (for local testing; this isn't returned to the client)
-            cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
-            cv2.putText(frame, recognized_name, (left, top - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-            print(f"Recognized face: {recognized_name}")
-        else:
-            print("Face not recognized in captured image.")
+    image_data = request.form["imageData"]
+    if image_data.startswith("data:image"):
+        image_data = image_data.split(",")[1]
+
+    try:
+        image_bytes = base64.b64decode(image_data)
+    except Exception as e:
+        return jsonify({"error": "Failed to decode image data: " + str(e)}), 400
+
+    # Decode image bytes into a numpy array and then into an image using OpenCV
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if img is None:
+        return jsonify({"error": "Failed to decode image to valid format."}), 400
+
+    recognized_names = process_attendance_from_image(img)
     if recognized_names:
         return jsonify({"message": "Attendance marked for: " + ", ".join(recognized_names)}), 200
     else:
         return jsonify({"error": "No recognized faces in the captured image."}), 400
-
-# Endpoint to stop the attendance system (for live capture loop, local testing only)
-@app.route("/stop_attendance", methods=["POST"])
-def stop_attendance():
-    global attendance_running
-    if attendance_running:
-        attendance_running = False
-        time.sleep(2)
-        return jsonify({"message": "Attendance system stopped."}), 200
-    else:
-        return jsonify({"message": "Attendance system is not running."}), 200
-
-# Endpoint to list known face filenames as a JSON array
-@app.route("/known_faces", methods=["GET"])
-def list_known_faces():
-    files = [filename for filename in os.listdir(KNOWN_FACES_DIR)
-             if filename.lower().endswith((".jpg", ".png"))]
-    return jsonify(files)
-
-# Endpoint to serve an individual known face image
-@app.route("/known_faces/<filename>", methods=["GET"])
-def serve_known_face(filename):
-    return send_from_directory(KNOWN_FACES_DIR, filename)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
