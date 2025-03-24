@@ -59,7 +59,7 @@ def mark_attendance(name):
 def process_attendance_from_image(image):
     """
     Process the given image (numpy array) to detect faces,
-    compare with known faces, and mark attendance for recognized faces.
+    compare against known faces, and mark attendance for recognized faces.
     Returns a list of recognized names.
     """
     face_locations = face_recognition.face_locations(image)
@@ -71,7 +71,6 @@ def process_attendance_from_image(image):
         if not encodings:
             continue
         face_encoding = encodings[0]
-        # Adjust tolerance as needed (0.8 here)
         matches = face_recognition.compare_faces(known_faces, face_encoding, tolerance=0.8)
         print("Matches for uploaded image:", matches)
         if True in matches:
@@ -149,7 +148,7 @@ def capture_face():
     except Exception as e:
         return jsonify({"error": "Error processing image: " + str(e)}), 500
 
-# Endpoint to mark attendance by capturing an image from the frontend
+# Endpoint to mark attendance by processing an image captured on the client
 @app.route("/start_attendance", methods=["POST"])
 def start_attendance():
     if "imageData" not in request.form:
@@ -164,7 +163,6 @@ def start_attendance():
     except Exception as e:
         return jsonify({"error": "Failed to decode image data: " + str(e)}), 400
 
-    # Convert the image bytes into a numpy array, then decode to an image
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     if img is None:
