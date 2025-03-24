@@ -17,15 +17,22 @@ if not os.path.exists(KNOWN_FACES_DIR):
 
 known_faces = []
 known_names = []
+
+print("Loading known faces...")
 for filename in os.listdir(KNOWN_FACES_DIR):
     if filename.lower().endswith((".jpg", ".png")):
         filepath = os.path.join(KNOWN_FACES_DIR, filename)
-        image = face_recognition.load_image_file(filepath)
-        encodings = face_recognition.face_encodings(image)
-        if encodings:
-            known_faces.append(encodings[0])
-            known_names.append(os.path.splitext(filename)[0])
-            print(f"Loaded known face: {filename}")
+        try:
+            image = face_recognition.load_image_file(filepath)
+            encodings = face_recognition.face_encodings(image)
+            if encodings:
+                known_faces.append(encodings[0])
+                known_names.append(os.path.splitext(filename)[0])
+                print(f"Loaded known face: {filename}")
+            else:
+                print(f"No encoding found in {filename}")
+        except Exception as e:
+            print(f"Error loading {filename}: {e}")
 
 # --- Attendance Data ---
 attendance_csv = "attendance.csv"
@@ -62,38 +69,38 @@ def capture_loop():
         return
     print("Capture loop started.")
     while attendance_running:
-        success, img = cap.read()
+        success, frame = cap.read()
         if not success:
             print("Failed to read frame from camera.")
             continue
 
         # Detect faces in the current frame
-        face_locations = face_recognition.face_locations(img)
+        face_locations = face_recognition.face_locations(frame)
         print("Detected face locations:", face_locations)
-        # Process each detected face
-        for face_location in face_locations:
-            top, right, bottom, left = face_location
-            rgb_frame = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            encodings = face_recognition.face_encodings(rgb_frame, [face_location])
+        for (top, right, bottom, left) in face_locations:
+            # Convert frame to RGB
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            encodings = face_recognition.face_encodings(rgb_frame, [(top, right, bottom, left)])
             if not encodings:
+                print("No encoding found for detected face.")
                 continue
             face_encoding = encodings[0]
-            # Adjust tolerance if necessary (0.7 might be too strict or lenient)
-            matches = face_recognition.compare_faces(known_faces, face_encoding, tolerance=0.7)
-            print("Matches:", matches)
+            # Increase tolerance to 0.8 for more lenient matching
+            matches = face_recognition.compare_faces(known_faces, face_encoding, tolerance=0.8)
+            print("Matches for detected face:", matches)
             if True in matches:
                 match_index = matches.index(True)
-                name = known_names[match_index]
-                mark_attendance(name)
-                cv2.rectangle(img, (left, top), (right, bottom), (0, 255, 0), 2)
-                cv2.putText(img, name, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-                print(f"Recognized face: {name}")
+                recognized_name = known_names[match_index]
+                mark_attendance(recognized_name)
+                cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+                cv2.putText(frame, recognized_name, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                print(f"Recognized face: {recognized_name}")
             else:
                 # Optionally draw a red rectangle for unrecognized faces
-                cv2.rectangle(img, (left, top), (right, bottom), (0, 0, 255), 2)
+                cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
                 print("Face not recognized.")
-        latest_frame = img.copy()
-        time.sleep(0.5)  # Reduced sleep time for more frequent detection
+        latest_frame = frame.copy()
+        time.sleep(0.5)
     cap.release()
     print("Capture loop stopped.")
 
@@ -103,9 +110,8 @@ def generate_frames():
         if latest_frame is not None:
             ret, buffer = cv2.imencode('.jpg', latest_frame)
             if ret:
-                frame = buffer.tobytes()
                 yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
         time.sleep(0.1)
 
 # --- Flask Endpoints ---
@@ -149,19 +155,22 @@ def capture_face():
     try:
         with open(file_path, "wb") as f:
             f.write(image_bytes)
+        print(f"Saved image for {name} at {file_path}")
     except Exception as e:
         return jsonify({"error": "Failed to save image: " + str(e)}), 500
 
-    new_image = face_recognition.load_image_file(file_path)
-    encodings = face_recognition.face_encodings(new_image)
-    if encodings:
-        new_encoding = encodings[0]
-        known_faces.append(new_encoding)
-        known_names.append(name)
-        print(f"Added {name} to known faces from uploaded image.")
-        return jsonify({"message": f"Added {name} to known faces from uploaded image."}), 200
-    else:
-        return jsonify({"error": "No face detected in the uploaded image."}), 400
+    try:
+        new_image = face_recognition.load_image_file(file_path)
+        encodings = face_recognition.face_encodings(new_image)
+        if encodings:
+            known_faces.append(encodings[0])
+            known_names.append(name)
+            print(f"Added {name} to known faces from uploaded image.")
+            return jsonify({"message": f"Added {name} to known faces from uploaded image."}), 200
+        else:
+            return jsonify({"error": "No face detected in the uploaded image."}), 400
+    except Exception as e:
+        return jsonify({"error": "Error processing image: " + str(e)}), 500
 
 @app.route("/start_attendance", methods=["POST"])
 def start_attendance():
