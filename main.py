@@ -56,12 +56,12 @@ def mark_attendance(name):
         except Exception as e:
             print(f"Error saving attendance: {e}")
 
-# --- Global Variables ---
+# --- Global Variables for live video (local testing only) ---
 attendance_running = False
 capture_thread = None
 latest_frame = None
 
-# Capture loop uses the physical webcam (for local testing only)
+# (The capture_loop() function remains for local testing of live video feed)
 def capture_loop():
     global attendance_running, latest_frame
     cap = cv2.VideoCapture(0)
@@ -85,7 +85,6 @@ def capture_loop():
                 print("No encoding found for detected face.")
                 continue
             face_encoding = encodings[0]
-            # Using a tolerance of 0.8 (adjust as needed)
             matches = face_recognition.compare_faces(known_faces, face_encoding, tolerance=0.8)
             print("Matches for detected face:", matches)
             if True in matches:
@@ -132,7 +131,7 @@ def get_attendance():
 def video_feed():
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-# Endpoint to upload a new face image without marking attendance
+# Endpoint to capture a new face via uploaded image (base64) without marking attendance
 @app.route("/capture_face", methods=["POST"])
 def capture_face():
     if "name" not in request.form or "imageData" not in request.form:
@@ -167,26 +166,55 @@ def capture_face():
             known_faces.append(encodings[0])
             known_names.append(name)
             print(f"Added {name} to known faces from uploaded image.")
-            # Attendance is NOT marked here.
+            # Do NOT mark attendance here.
             return jsonify({"message": f"Added {name} to known faces."}), 200
         else:
             return jsonify({"error": "No face detected in the uploaded image."}), 400
     except Exception as e:
         return jsonify({"error": "Error processing image: " + str(e)}), 500
 
-# Endpoint to start the attendance system (capture loop)
+# Updated /start_attendance endpoint: capture a single image from the webcam and mark attendance
 @app.route("/start_attendance", methods=["POST"])
 def start_attendance():
-    global attendance_running, capture_thread
-    if not attendance_running:
-        attendance_running = True
-        capture_thread = threading.Thread(target=capture_loop, daemon=True)
-        capture_thread.start()
-        return jsonify({"message": "Attendance system started."}), 200
-    else:
-        return jsonify({"message": "Attendance system already running."}), 200
+    # Capture a single image from the physical webcam
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        return jsonify({"error": "Could not open webcam."}), 500
+    success, frame = cap.read()
+    cap.release()
+    if not success:
+        return jsonify({"error": "Failed to capture image from webcam."}), 500
 
-# Endpoint to stop the attendance system (capture loop)
+    # Process the captured frame for face recognition
+    face_locations = face_recognition.face_locations(frame)
+    print("Captured image face locations:", face_locations)
+    recognized_names = []
+    for (top, right, bottom, left) in face_locations:
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        encodings = face_recognition.face_encodings(rgb_frame, [(top, right, bottom, left)])
+        if not encodings:
+            continue
+        face_encoding = encodings[0]
+        matches = face_recognition.compare_faces(known_faces, face_encoding, tolerance=0.8)
+        print("Matches for captured image:", matches)
+        if True in matches:
+            match_index = matches.index(True)
+            recognized_name = known_names[match_index]
+            mark_attendance(recognized_name)
+            recognized_names.append(recognized_name)
+            # Draw bounding box (for local testing; this isn't returned to the client)
+            cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+            cv2.putText(frame, recognized_name, (left, top - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+            print(f"Recognized face: {recognized_name}")
+        else:
+            print("Face not recognized in captured image.")
+    if recognized_names:
+        return jsonify({"message": "Attendance marked for: " + ", ".join(recognized_names)}), 200
+    else:
+        return jsonify({"error": "No recognized faces in the captured image."}), 400
+
+# Endpoint to stop the attendance system (for live capture loop, local testing only)
 @app.route("/stop_attendance", methods=["POST"])
 def stop_attendance():
     global attendance_running
