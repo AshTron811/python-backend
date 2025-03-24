@@ -1,9 +1,9 @@
 import base64
 import cv2
 import os
-import numpy as np
 import face_recognition
 import pandas as pd
+import numpy as np
 from datetime import datetime
 from flask import Flask, jsonify, send_file, request, Response, send_from_directory
 import time
@@ -58,8 +58,9 @@ def mark_attendance(name):
 
 def process_attendance_from_image(image):
     """
-    Given an image (as a numpy array), detect faces, compare against known faces,
-    and mark attendance for recognized faces. Returns a list of recognized names.
+    Process the given image (as a numpy array) to detect faces,
+    compare against known faces, and mark attendance for recognized faces.
+    Returns a list of recognized names.
     """
     face_locations = face_recognition.face_locations(image)
     print("Detected face locations in uploaded image:", face_locations)
@@ -70,7 +71,7 @@ def process_attendance_from_image(image):
         if not encodings:
             continue
         face_encoding = encodings[0]
-        # Use a tolerance of 0.8 (adjust as needed)
+        # Using tolerance of 0.8 (adjust if needed)
         matches = face_recognition.compare_faces(known_faces, face_encoding, tolerance=0.8)
         print("Matches for uploaded image:", matches)
         if True in matches:
@@ -78,10 +79,6 @@ def process_attendance_from_image(image):
             recognized_name = known_names[match_index]
             mark_attendance(recognized_name)
             recognized_names.append(recognized_name)
-            # Optionally, draw a rectangle on the image (not sent to client)
-            cv2.rectangle(image, (left, top), (right, bottom), (0, 255, 0), 2)
-            cv2.putText(image, recognized_name, (left, top - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
             print(f"Recognized face: {recognized_name}")
         else:
             print("Face not recognized in uploaded image.")
@@ -111,7 +108,7 @@ def list_known_faces():
 def serve_known_face(filename):
     return send_from_directory(KNOWN_FACES_DIR, filename)
 
-# Endpoint to upload a new face image without marking attendance
+# Endpoint to upload a new face image (does not mark attendance)
 @app.route("/capture_face", methods=["POST"])
 def capture_face():
     if "name" not in request.form or "imageData" not in request.form:
@@ -153,9 +150,7 @@ def capture_face():
     except Exception as e:
         return jsonify({"error": "Error processing image: " + str(e)}), 500
 
-# Endpoint to capture a photo when "Start Attendance" is pressed.
-# This endpoint expects an image (base64) uploaded from the frontend,
-# then processes that image to detect and recognize faces, marking attendance for recognized faces.
+# Endpoint to capture an image from the uploaded data (when "Start Attendance" is pressed)
 @app.route("/start_attendance", methods=["POST"])
 def start_attendance():
     if "imageData" not in request.form:
@@ -170,7 +165,7 @@ def start_attendance():
     except Exception as e:
         return jsonify({"error": "Failed to decode image data: " + str(e)}), 400
 
-    # Decode image bytes into a numpy array and then into an image using OpenCV
+    # Convert image bytes to a numpy array, then decode to an image
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     if img is None:
