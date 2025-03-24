@@ -58,7 +58,7 @@ def mark_attendance(name):
 
 def process_attendance_from_image(image):
     """
-    Process the uploaded image (numpy array) to detect faces,
+    Process the given image (numpy array) to detect faces,
     compare against known faces, and mark attendance for recognized faces.
     Returns a list of recognized names.
     """
