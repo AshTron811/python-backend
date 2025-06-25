@@ -1,31 +1,28 @@
-# Use an official Python 3.10 image (buster variant includes distutils by default)
+# Use a Debian-based Python image that includes distutils
 FROM python:3.10-buster
 
-# Install system dependencies required for building dlib, OpenCV, etc.
+# Install system dependencies needed at runtime
 RUN apt-get update && \
-    apt-get install -y \
-      cmake \
-      build-essential \
-      libopenblas-dev \
-      liblapack-dev \
+    apt-get install -y --no-install-recommends \
       libgl1-mesa-glx \
-      python3-distutils && \
-    rm -rf /var/lib/apt/lists/*
+      libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set the working directory inside the container
 WORKDIR /app
 
-# Copy the requirements file into the container
+# Copy only requirements first for better layer caching
 COPY requirements.txt .
 
-# Install Python dependencies from requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# Upgrade pip/wheel/setuptools and install only binary wheels for heavy libs
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install \
+      --no-cache-dir \
+      --only-binary=:all: \
+      -r requirements.txt
 
-# Copy the rest of your application code into the container
+# Now copy the rest of your app
 COPY . .
 
-# Expose the port your Flask app runs on
 EXPOSE 5000
 
-# Set the default command to run your Python backend
-CMD ["python", "main.py"]
+CMD ["gunicorn", "main:app", "--bind", "0.0.0.0:5000"]
