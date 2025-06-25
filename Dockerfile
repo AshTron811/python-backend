@@ -1,7 +1,7 @@
-# Use a Debian-based Python image that includes distutils
-FROM python:3.10-buster
+# 1. Use Python 3.9 (buster variant includes distutils)
+FROM python:3.9-buster
 
-# Install system dependencies needed at runtime
+# 2. Install minimal runtime deps for OpenCV/dlib
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       libgl1-mesa-glx \
@@ -10,19 +10,14 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-# Copy only requirements first for better layer caching
+# 3. Copy requirements and install only binary wheels
 COPY requirements.txt .
-
-# Upgrade pip/wheel/setuptools and install only binary wheels for heavy libs
 RUN pip install --upgrade pip setuptools wheel && \
-    pip install \
-      --no-cache-dir \
-      --only-binary=:all: \
-      -r requirements.txt
+    pip install --no-cache-dir --only-binary=:all: -r requirements.txt
 
-# Now copy the rest of your app
+# 4. Copy application code
 COPY . .
 
+# 5. Expose and run with Gunicorn
 EXPOSE 5000
-
-CMD ["gunicorn", "main:app", "--bind", "0.0.0.0:5000"]
+CMD ["gunicorn", "main:app", "--bind", "0.0.0.0:5000", "--workers", "1"]
