@@ -1,7 +1,7 @@
-# Use Python 3.11-slim (distutils included)
+# 1) Use Python 3.11-slim (includes distutils)
 FROM python:3.11-slim
 
-# Install minimal runtime deps plus git for pip-git installs
+# 2) Install minimal runtime deps + git for pip-git installs
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       libgl1-mesa-glx \
@@ -11,29 +11,30 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-# Copy your requirements file (we won't use it directly for face-recognition)
+# 3) Copy requirements file
 COPY requirements.txt .
 
-# Upgrade pip, setuptools, wheel
+# 4) Upgrade pip/setuptools/wheel
 RUN pip install --upgrade pip setuptools wheel
 
-# 1) Install the binary dlib package
+# 5) Install binary dlib
 RUN pip install --no-cache-dir --only-binary=:all: dlib-bin==19.24.6
 
-# 2) Install face_recognition_models from GitHub
+# 6) Install face_recognition_models from GitHub
 RUN pip install --no-cache-dir \
     git+https://github.com/ageitgey/face_recognition_models.git@master#egg=face_recognition_models
 
-# 3) Install the rest of your deps from requirements.txt, excluding dlib
-RUN pip install --no-cache-dir --only-binary=:all: \
-    -r <(grep -vE "^(dlib|face-recognition)" requirements.txt)
+# 7) Install all other deps (excluding dlib and face-recognition) via a temp file
+RUN grep -v -E '^(dlib|face-recognition)' requirements.txt > temp-reqs.txt && \
+    pip install --no-cache-dir --only-binary=:all: -r temp-reqs.txt && \
+    rm temp-reqs.txt
 
-# 4) Finally install face-recognition itself without dependencies
+# 8) Install face-recognition itself without pulling its own dlib dependency
 RUN pip install --no-cache-dir --no-deps face-recognition==1.3.0
 
-# Copy application code
+# 9) Copy app code
 COPY . .
 
+# 10) Expose port and run
 EXPOSE 5000
-
 CMD ["gunicorn", "main:app", "--bind", "0.0.0.0:5000", "--workers", "1"]
